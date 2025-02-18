@@ -149,10 +149,26 @@ async def scrape_messages(request: ScrapeRequest):
                                         referenced_message = None
                                         if msg.get("referenced_message"):
                                             ref = msg["referenced_message"]
+                                            # Get the full message content for cross-channel forwards
+                                            referenced_content = ref.get("content", "")
+                                            if not referenced_content and ref.get("channel_id") != request.channel_id:
+                                                try:
+                                                    ref_channel_url = f"https://discord.com/api/v9/channels/{ref['channel_id']}/messages/{ref['id']}"
+                                                    async with session.get(ref_channel_url, headers=headers) as ref_response:
+                                                        if ref_response.status == 200:
+                                                            ref_data = await ref_response.json()
+                                                            referenced_content = ref_data.get("content", "")
+                                                            # Update attachments from the original message
+                                                            ref["attachments"] = ref_data.get("attachments", [])
+                                                except Exception as e:
+                                                    logger.error(f"Error fetching referenced message {ref['id']}: {e}")
+                                                    referenced_content = ref.get("content", "")
+
                                             referenced_message = {
                                                 "id": ref["id"],
-                                                "content": ref["content"],
+                                                "content": referenced_content,
                                                 "timestamp": ref["timestamp"],
+                                                "channel_id": ref.get("channel_id"),
                                                 "author": {
                                                     "id": ref["author"]["id"],
                                                     "username": ref["author"]["username"]
@@ -170,6 +186,7 @@ async def scrape_messages(request: ScrapeRequest):
                                             "id": msg["id"],
                                             "content": msg["content"],
                                             "timestamp": msg["timestamp"],
+                                            "channel_id": msg.get("channel_id", request.channel_id),
                                             "author": {
                                                 "id": msg["author"]["id"],
                                                 "username": msg["author"]["username"]
